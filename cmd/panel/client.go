@@ -202,6 +202,8 @@ func init() {
 	clientExportCmd.Flags().Int("port", 2222, "SSH server port")
 	clientExportCmd.Flags().String("token", "", "Connection token/key")
 	clientExportCmd.Flags().String("label", "", "Connection label")
+	clientExportCmd.Flags().String("domain", "", "Dnstt domain")
+	clientExportCmd.Flags().String("pubkey", "", "Public key")
 
 	// Add subcommands
 	clientCmd.AddCommand(clientAddCmd)

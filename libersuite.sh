@@ -194,20 +194,23 @@ export_profile() {
   USERNAME="$1"
   IP="$2"
 
-  [[ -z "$USERNAME" || -z "$IP" ]] && err "Usage: libersuite client export <username> <server_ip> [domain] [pubkey]"
+  [[ -z "$USERNAME" || -z "$IP" ]] && err "Usage: libersuite client export <username> <server_ip>"
 
-  DOMAIN_ARG="${3:-$DOMAIN}"
-  PUBKEY_ARG="$4"
-
-  ARGS=("client" "export" "$USERNAME" "--host" "$IP" "--port" "$LIBERSUITE_PORT" "--token" "$STATIC_TOKEN" "--label" "$USERNAME")
-
-  if [[ -n "$DOMAIN_ARG" ]]; then
-    ARGS+=("--domain" "$DOMAIN_ARG")
+  if [[ ! -f "$DNSTT_DIR/server.pub" ]]; then
+      err "Public key not found: $DNSTT_DIR/server.pub"
   fi
 
-  if [[ -n "$PUBKEY_ARG" ]]; then
-    ARGS+=("--pubkey" "$PUBKEY_ARG")
-  fi
+  PUBKEY="$(cat "$DNSTT_DIR/server.pub")"
+
+  ARGS=(
+    "client" "export" "$USERNAME"
+    "--host" "$IP"
+    "--port" "$LIBERSUITE_PORT"
+    "--token" "$STATIC_TOKEN"
+    "--label" "$USERNAME"
+    "--domain" "$DOMAIN"
+    "--pubkey" "$PUBKEY"
+  )
 
   "$LIBER_BIN" "${ARGS[@]}"
 }
@@ -232,7 +235,7 @@ Client Management:
   libersuite client remove <username>
   libersuite client enable <username>
   libersuite client disable <username>
-  libersuite client export <username> <server_ip> [domain] [pubkey]
+  libersuite client export <username> <server_ip>
 
 Examples:
   libersuite client add omid 1234
@@ -269,13 +272,7 @@ Client Management:
   client remove <username>      Remove a client
   client enable <username>      Enable a client
   client disable <username>     Disable a client
-  client export <user> <ip> [domain] [pubkey]
-
-Examples:
-  libersuite client add alice pass123
-  libersuite client add bob pass456 100 30
-  libersuite client list
-  libersuite client export alice 1.2.3.4
+  client export <user> <ip>
 
 For client command help: libersuite client
 
