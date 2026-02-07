@@ -6,6 +6,10 @@ on:
         required: true
         type: string
         description: 'release tag'
+
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build
