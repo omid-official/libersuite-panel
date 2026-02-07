@@ -3,7 +3,7 @@
 set -e
 
 DNSTT_URL="https://dnstt.network/dnstt-server-linux-amd64"
-LIBERSUITE_URL=""
+LIBERSUITE_URL="https://github.com/omid-official/libersuite-panel/releases/download/v0.1.0/libersuite-panel-linux-amd64.tar.gz"
 LIBERSUITE_SH_URL="https://raw.githubusercontent.com/omid-official/libersuite-panel/main/libersuite.sh"
 
 BASE_DIR="$HOME/libersuite"
