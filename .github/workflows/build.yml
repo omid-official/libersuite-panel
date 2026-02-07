@@ -30,7 +30,6 @@ jobs:
           GOARCH: amd64
         run: |
           go build -v -o libersuite-panel-linux-amd64 ./cmd/main.go
-          tar -czf libersuite-panel-linux-amd64.tar.gz libersuite-panel-linux-amd64
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -40,6 +39,6 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            libersuite-panel-linux-amd64.tar.gz
+            libersuite-panel-linux-amd64
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
