@@ -137,24 +137,115 @@ logs() {
   journalctl -u libersuite -u dnstt -f
 }
 
+add_client() {
+  load_conf
+  USERNAME="$1"
+  PASSWORD="$2"
+  TRAFFIC_LIMIT="$3"
+  EXPIRES_IN="$4"
+
+  [[ -z "$USERNAME" || -z "$PASSWORD" ]] && err "Usage: libersuite client add <username> <password> [traffic_limit_gb] [expires_in_days]"
+
+  ARGS=("client" "add" "$USERNAME" "$PASSWORD")
+
+  if [[ -n "$TRAFFIC_LIMIT" ]]; then
+    ARGS+=("--traffic-limit" "$TRAFFIC_LIMIT")
+  fi
+
+  if [[ -n "$EXPIRES_IN" ]]; then
+    ARGS+=("--expires-in" "$EXPIRES_IN")
+  fi
+
+  "$LIBER_BIN" "${ARGS[@]}"
+  ok "Client '$USERNAME' added"
+}
+
+list_clients() {
+  load_conf
+  "$LIBER_BIN" client list
+}
+
+remove_client() {
+  load_conf
+  USERNAME="$1"
+  [[ -z "$USERNAME" ]] && err "Usage: libersuite client remove <username>"
+  "$LIBER_BIN" client remove "$USERNAME"
+  ok "Client '$USERNAME' removed"
+}
+
+enable_client() {
+  load_conf
+  USERNAME="$1"
+  [[ -z "$USERNAME" ]] && err "Usage: libersuite client enable <username>"
+  "$LIBER_BIN" client enable "$USERNAME"
+  ok "Client '$USERNAME' enabled"
+}
+
+disable_client() {
+  load_conf
+  USERNAME="$1"
+  [[ -z "$USERNAME" ]] && err "Usage: libersuite client disable <username>"
+  "$LIBER_BIN" client disable "$USERNAME"
+  ok "Client '$USERNAME' disabled"
+}
+
 export_profile() {
   load_conf
-  NAME="$1"
+  USERNAME="$1"
   IP="$2"
-  DOMAIN="$3"
-  PUBKEY="$4"
 
-  [[ -z "$NAME" || -z "$IP" ]] && err "Usage: libersuite export <name> <server_ip>"
+  [[ -z "$USERNAME" || -z "$IP" ]] && err "Usage: libersuite client export <username> <server_ip> [domain] [pubkey]"
 
-  "$LIBER_BIN" export "$NAME" \
-    --host "$IP" \
-    --port "$LIBERSUITE_PORT" \
-    --token "$STATIC_TOKEN" \
-    --label "$NAME" \
-    --domain "$DOMAIN" \
-    --pubkey "$PUBKEY"
+  DOMAIN_ARG="${3:-$DOMAIN}"
+  PUBKEY_ARG="$4"
 
-  ok "Profile exported: $NAME"
+  ARGS=("client" "export" "$USERNAME" "--host" "$IP" "--port" "$LIBERSUITE_PORT" "--token" "$STATIC_TOKEN" "--label" "$USERNAME")
+
+  if [[ -n "$DOMAIN_ARG" ]]; then
+    ARGS+=("--domain" "$DOMAIN_ARG")
+  fi
+
+  if [[ -n "$PUBKEY_ARG" ]]; then
+    ARGS+=("--pubkey" "$PUBKEY_ARG")
+  fi
+
+  "$LIBER_BIN" "${ARGS[@]}"
+}
+
+client_command() {
+  SUBCOMMAND="$1"
+  shift
+
+  case "$SUBCOMMAND" in
+    add) add_client "$@" ;;
+    list) list_clients ;;
+    remove) remove_client "$@" ;;
+    enable) enable_client "$@" ;;
+    disable) disable_client "$@" ;;
+    export) export_profile "$@" ;;
+    *)
+      cat <<EOF
+
+Client Management:
+  libersuite client add <username> <password> [traffic_limit_gb] [expires_in_days]
+  libersuite client list
+  libersuite client remove <username>
+  libersuite client enable <username>
+  libersuite client disable <username>
+  libersuite client export <username> <server_ip> [domain] [pubkey]
+
+Examples:
+  libersuite client add omid 1234
+  libersuite client add mahan 5678 100 30    # 100GB limit, expires in 30 days
+  libersuite client list
+  libersuite client remove omid
+  libersuite client enable mahan
+  libersuite client disable omid
+  libersuite client export mahan 1.2.3.4 t.example.com pubkey
+
+EOF
+      ;;
+  esac
 }
 
 help() {
@@ -163,15 +254,31 @@ help() {
 LiberSuite Manager
 
 Commands:
-  install               Run installer
-  update                Update binaries
-  uninstall             uninstall libersuite
-  domain <name>         Change domain
-  ports <dnstt> <liber> Change ports
-  start | stop | restart
-  enable | disable
-  logs                  Follow logs
-  export <name> <ip>    Export client profile
+  install                       Run installer
+  update                        Update binaries
+  uninstall                     Uninstall libersuite
+  domain <name>                 Change domain
+  ports <dnstt> <liber>         Change ports
+  start | stop | restart        Control services
+  enable | disable              Enable/disable auto-start
+  logs                          Follow logs
+
+Client Management:
+  client add <user> <pass> [traffic_gb] [expires_days]
+  client list                   List all clients
+  client remove <username>      Remove a client
+  client enable <username>      Enable a client
+  client disable <username>     Disable a client
+  client export <user> <ip> [domain] [pubkey]
+
+Examples:
+  libersuite client add alice pass123
+  libersuite client add bob pass456 100 30
+  libersuite client list
+  libersuite client export alice 1.2.3.4
+
+For client command help: libersuite client
+
 EOF
 }
 
@@ -187,7 +294,7 @@ case "$1" in
   enable) enable ;;
   disable) disable ;;
   logs) logs ;;
-  export) export_profile "$2" "$3" "$4" "$5" ;;
+  client) shift; client_command "$@" ;;
   help|"") help ;;
   *) err "Unknown command: $1" ;;
 esac
