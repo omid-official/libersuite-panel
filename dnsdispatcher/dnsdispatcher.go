@@ -21,7 +21,7 @@ type DnsDispatcher struct {
 
 func NewDnsDispatcher(domain, dnsttAddr string) *DnsDispatcher {
 	return &DnsDispatcher{
-		domain:    domain,
+		domain:    domain + ".",
 		dnsttAddr: dnsttAddr,
 	}
 }
