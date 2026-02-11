@@ -74,7 +74,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=$LIBER_DIR/panel server --port $LIBERSUITE_PORT
+ExecStart=$LIBER_DIR/panel server --port $LIBERSUITE_PORT --dns-domain $DOMAIN --dnstt-addr 127.0.0.1:$DNSTT_PORT
 Restart=always
 RestartSec=3
 User=$RUN_USER

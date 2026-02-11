@@ -71,7 +71,7 @@ Description=Libersuite Panel
 After=network.target
 
 [Service]
-ExecStart=$LIBER_BIN server --port $LIBERSUITE_PORT
+ExecStart=$LIBER_BIN server --port $LIBERSUITE_PORT --dns-domain $DOMAIN --dnstt-addr 127.0.0.1:$DNSTT_PORT
 Restart=always
 User=$(whoami)
 WorkingDirectory=$LIBER_DIR
