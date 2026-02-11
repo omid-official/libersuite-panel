@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/libersuite-org/panel/crypto"
+	"github.com/libersuite-org/panel/dnsdispatcher"
 	"github.com/libersuite-org/panel/sshserver"
 	"github.com/spf13/cobra"
 )
@@ -37,6 +38,14 @@ var serverCmd = &cobra.Command{
 			return err
 		}
 		keySize, err := cmd.Flags().GetInt("key-size")
+		if err != nil {
+			return err
+		}
+		dnsDomain, err := cmd.Flags().GetString("dns-domain")
+		if err != nil {
+			return err
+		}
+		dnsttAddr, err := cmd.Flags().GetString("dnstt-addr")
 		if err != nil {
 			return err
 		}
@@ -67,9 +76,11 @@ var serverCmd = &cobra.Command{
 			HostKey: hostKey,
 		}
 
-		server := sshserver.New(&cfg)
+		sshServer := sshserver.New(&cfg)
+		dnsDispatcher := dnsdispatcher.NewDnsDispatcher(dnsDomain, dnsttAddr)
 
 		log.Printf("Starting SSH VPN server on %s:%d", host, port)
+		log.Printf("Starting DNS dispatcher for domain: %s, forwarding to: %s", dnsDomain, dnsttAddr)
 		log.Printf("Database: %s", dbPath)
 		log.Printf("Host key: %s", hostKey)
 		log.Println("Press Ctrl+C to stop the server")
@@ -77,9 +88,17 @@ var serverCmd = &cobra.Command{
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		errChan := make(chan error, 1)
+		errChan := make(chan error, 2)
 		go func() {
-			errChan <- server.Start(ctx)
+			if err := sshServer.Start(ctx); err != nil {
+				errChan <- fmt.Errorf("SSH server error: %w", err)
+			}
+		}()
+
+		go func() {
+			if err := dnsDispatcher.Start(ctx); err != nil {
+				errChan <- fmt.Errorf("DNS dispatcher error: %w", err)
+			}
 		}()
 
 		sigChan := make(chan os.Signal, 1)
@@ -98,7 +117,7 @@ var serverCmd = &cobra.Command{
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
 
-		if err := server.Shutdown(shutdownCtx); err != nil {
+		if err := sshServer.Shutdown(shutdownCtx); err != nil {
 			log.Printf("Shutdown error: %v", err)
 		}
 
@@ -113,4 +132,6 @@ func init() {
 	serverCmd.Flags().String("host-key", "", "Path to SSH host key file (will be generated if not exists)")
 	serverCmd.Flags().Bool("regenerate-key", false, "Regenerate the host key even if it already exists")
 	serverCmd.Flags().Int("key-size", 2048, "RSA key size in bits")
+	serverCmd.Flags().String("dns-domain", "", "Domain to handle DNS queries for (e.g., t.example.com.)")
+	serverCmd.Flags().String("dnstt-addr", "127.0.0.1:5300", "Address to forward DNS queries to (dnstt server)")
 }
