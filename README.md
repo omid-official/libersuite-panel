@@ -81,7 +81,7 @@ libersuite client enable <username>
 libersuite client disable <username>
 
 # Export client connection URLs (SSH & dnstt)
-libersuite client export <username> --host <host> --port <port> --token <token> --label label> --domain <domain> --pubkey <pubkey>
+libersuite client export <username> <server_ip>
 ```
 
 #### Command Descriptions
