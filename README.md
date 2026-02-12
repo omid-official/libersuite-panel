@@ -2,7 +2,7 @@
 
 # Libersuite Panel
 
-**An SSH tunnel management service built with Go**
+**An SSH & dnstt tunnel management service built with Go**
 
 [![License](https://img.shields.io/github/license/omid-official/libersuite-panel)](LICENSE)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/omid-official/libersuite-panel)](go.mod)
@@ -14,7 +14,7 @@
 ---
 
 ## About
-Libersuite Panel is an SSH tunnel management service designed to simplify the administration of SSH servers. Built with Go for performance and reliability, it provides an intuitive interface for managing SSH connections, users, and server configurations.
+Libersuite Panel is an SSH and dnstt tunnel management service designed to simplify the administration of SSH/dnstt servers. Built with Go for performance and reliability, it provides an intuitive interface for managing SSH connections, users, and server configurations.
 
 ## Installation
 
