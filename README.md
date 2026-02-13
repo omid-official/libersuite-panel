@@ -102,6 +102,9 @@ Example to export a client connection:
 libersuite client export someone --host 1.2.3.4 --port 2222 --domain t.example.com --pubkey "YOUR_PUBKEY"
 ```
 
+### Client
+You can use `NetMod` client.
+
 ## Contributing
 Contributions are welcome! Feel free to open an issue or submit a PR.
 
