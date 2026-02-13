@@ -102,6 +102,9 @@ if ! grep -q 'export PATH="$HOME/libersuite/libersuite:$PATH"' "$BASHRC"; then
   } >> "$BASHRC"
 fi
 
+# Apply PATH change immediately for current session
+export PATH="$HOME/libersuite/libersuite:$PATH"
+
 echo "libersuite.sh installed"
 
 echo "[+] Saving config..."
