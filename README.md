@@ -66,7 +66,7 @@ Libersuite provides commands to manage SSH VPN clients from your terminal:
 
 ```bash
 # Add a new client
-libersuite client add <username> <password> [--traffic-limit GB] [--expires-in days]
+libersuite client add <username> <password> [traffic_limit_gb] [expires_in_days]
 
 # List all clients
 libersuite client list
@@ -80,7 +80,7 @@ libersuite client enable <username>
 # Disable a client
 libersuite client disable <username>
 
-# Export client connection URLs (SSH & dnstt)
+# Export client config URLs (SSH & dnstt)
 libersuite client export <username> <server_ip>
 ```
 
@@ -91,15 +91,15 @@ libersuite client export <username> <server_ip>
 - **client remove**: Removes the specified client.
 - **client enable**: Enables a disabled client.
 - **client disable**: Disables a client.
-- **client export**: Outputs SSH and DNSTT connection URLs for the specified client. You can specify host, port, token, label, domain, and pubkey for advanced configuration.
+- **client export**: Outputs SSH and DNSTT config URLs for the specified client.
 
 Example to add a client with a 10GB traffic limit, valid for 30 days:
 ```bash
-libersuite client add someone password123 --traffic-limit 10 --expires-in 30
+libersuite client add someone password123 10 30
 ```
-Example to export a client connection:
+Example to export a client config:
 ```bash
-libersuite client export someone --host 1.2.3.4 --port 2222 --domain t.example.com --pubkey "YOUR_PUBKEY"
+libersuite client export someone server_ip
 ```
 
 ### Client
