@@ -36,6 +36,38 @@ Before installing, you need to configure your DNS records. This step is required
 
 Replace `example.com` with your actual domain and `1.2.3.4` with your server's IP address.
 
+### Make Sure Port 53 is Free
+
+On some servers, port 53 is occupied by `systemd-resolved`. To make sure port 53 is free and available for Libersuite Panel, follow these steps:
+
+1. **Edit `/etc/systemd/resolved.conf`:**
+
+   Open the configuration file in a text editor:
+   ```bash
+   sudo nano /etc/systemd/resolved.conf
+   ```
+
+    - If you see a line like `DNSStubListener=yes`, **change it to**:
+      ```
+      DNSStubListener=no
+      ```
+    - You can also add or set an upstream DNS server (such as Cloudflare’s DNS):
+      ```
+      DNS=1.1.1.1
+      ```
+
+2. **Update `/etc/resolv.conf`:**
+
+   Replace the default resolv.conf with a symlink to systemd’s configuration:
+   ```bash
+   sudo ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+   ```
+
+3. **Restart systemd-resolved for the changes to take effect:**
+   ```bash
+   sudo systemctl restart systemd-resolved
+   ```
+
 ### Quick Install
 
 Once your DNS is configured, install Libersuite Panel with a single command:
