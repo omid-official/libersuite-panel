@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Libersuite Admin Panel</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .card { border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+
+<div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="text-primary fw-bold">
+            <i class="bi bi-shield-lock"></i> Libersuite Admin Panel
+        </h2>
+        <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addModal">
+            <i class="bi bi-person-plus"></i> Add User
+        </button>
+    </div>
+
+    <div class="card bg-white">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>Username</th>
+                        <th>Password</th>
+                        <th>Usage / Limit</th>
+                        <th>Expiration</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {{ range .Clients }}
+                    <tr>
+                        <td>{{ .ID }}</td>
+                        <td class="fw-bold">{{ .Username }}</td>
+                        <td><code class="text-muted">{{ .Password }}</code></td>
+                        <td>
+                            <span class="badge bg-info text-dark">
+                                {{ printf "%.2f" (div (float .TrafficUsed) 1073741824.0) }} GB
+                            </span>
+                            /
+                            {{ if eq .TrafficLimit 0 }}
+                                ∞
+                            {{ else }}
+                                {{ printf "%.0f" (div (float .TrafficLimit) 1073741824.0) }} GB
+                            {{ end }}
+                        </td>
+                        <td>
+                            {{ if .ExpiresAt.IsZero }}
+                                <span class="text-success">Unlimited</span>
+                            {{ else }}
+                                {{ .ExpiresAt.Format "2006-01-02" }}
+                            {{ end }}
+                        </td>
+                        <td>
+                            {{ if .Enabled }}
+                                <span class="badge bg-success">Active</span>
+                            {{ else }}
+                                <span class="badge bg-danger">Disabled</span>
+                            {{ end }}
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-warning" onclick="toggleUser({{ .ID }})">
+                                <i class="bi bi-power"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteUser({{ .ID }})">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                            <a href="#" class="btn btn-sm btn-outline-primary"
+                               onclick="alert('Link generation feature coming soon!')">
+                                <i class="bi bi-link-45deg"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {{ end }}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add User Modal -->
+<div class="modal fade" id="addModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form action="/client/add" method="POST">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add New User</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+
+                    <div class="mb-3">
+                        <label class="form-label">Username</label>
+                        <input type="text" name="username" class="form-control" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Password</label>
+                        <input type="text" name="password" class="form-control" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Traffic Limit (GB) – 0 for Unlimited</label>
+                        <input type="number" name="limit" class="form-control" value="0">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Validity (Days) – 0 for Unlimited</label>
+                        <input type="number" name="days" class="form-control" value="0">
+                    </div>
+
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    function deleteUser(id) {
+        if (confirm('Are you sure you want to delete this user?')) {
+            fetch('/client/delete/' + id, { method: 'POST' })
+                .then(() => location.reload());
+        }
+    }
+
+    function toggleUser(id) {
+        fetch('/client/toggle/' + id, { method: 'POST' })
+            .then(() => location.reload());
+    }
+</script>
+
+</body>
+</html>
