@@ -2,7 +2,7 @@ package dnsdispatcher
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"net"
 	"strings"
 	"time"
@@ -15,11 +15,15 @@ const (
 )
 
 type DnsDispatcher struct {
-	domains   []string
-	dnsttAddr string
+	routes []domainRoute
 }
 
-func NewDnsDispatcher(domains []string, dnsttAddr string) *DnsDispatcher {
+type domainRoute struct {
+	domain   string
+	dnsttUDP *net.UDPAddr
+}
+
+func NewDnsDispatcher(domains []string, dnsttAddrs []string) (*DnsDispatcher, error) {
 	normalizedDomains := make([]string, 0, len(domains))
 	for _, domain := range domains {
 		domain = strings.TrimSpace(strings.ToLower(domain))
@@ -32,19 +36,47 @@ func NewDnsDispatcher(domains []string, dnsttAddr string) *DnsDispatcher {
 		normalizedDomains = append(normalizedDomains, domain)
 	}
 
-	return &DnsDispatcher{
-		domains:   normalizedDomains,
-		dnsttAddr: dnsttAddr,
+	if len(normalizedDomains) == 0 {
+		return nil, fmt.Errorf("at least one domain is required")
 	}
+
+	normalizedAddrs := make([]string, 0, len(dnsttAddrs))
+	for _, addr := range dnsttAddrs {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+		normalizedAddrs = append(normalizedAddrs, addr)
+	}
+
+	if len(normalizedAddrs) == 0 {
+		return nil, fmt.Errorf("at least one dnstt address is required")
+	}
+
+	if len(normalizedAddrs) != 1 && len(normalizedAddrs) != len(normalizedDomains) {
+		return nil, &net.AddrError{Err: "dnstt addr count must be 1 or match dns-domain count"}
+	}
+
+	routes := make([]domainRoute, 0, len(normalizedDomains))
+	for i, domain := range normalizedDomains {
+		addr := normalizedAddrs[0]
+		if len(normalizedAddrs) == len(normalizedDomains) {
+			addr = normalizedAddrs[i]
+		}
+
+		dnsttUDP, err := net.ResolveUDPAddr("udp", addr)
+		if err != nil {
+			return nil, err
+		}
+
+		routes = append(routes, domainRoute{domain: domain, dnsttUDP: dnsttUDP})
+	}
+
+	return &DnsDispatcher{routes: routes}, nil
 }
 
 func (d *DnsDispatcher) Start(ctx context.Context) error {
 	server := &dns.Server{Addr: ListenAddr, Net: "udp"}
-
-	dnsttUDP, err := net.ResolveUDPAddr("udp", d.dnsttAddr)
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	server.Handler = dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
 		if len(r.Question) == 0 {
@@ -52,9 +84,9 @@ func (d *DnsDispatcher) Start(ctx context.Context) error {
 		}
 
 		qName := strings.ToLower(r.Question[0].Name)
-
-		if d.shouldForward(qName) {
-			forwardDNS(w, r, dnsttUDP)
+		target := d.matchTarget(qName)
+		if target != nil {
+			forwardDNS(w, r, target)
 		}
 	})
 
@@ -71,13 +103,13 @@ func (d *DnsDispatcher) Start(ctx context.Context) error {
 	}
 }
 
-func (d *DnsDispatcher) shouldForward(qName string) bool {
-	for _, domain := range d.domains {
-		if strings.HasSuffix(qName, domain) {
-			return true
+func (d *DnsDispatcher) matchTarget(qName string) *net.UDPAddr {
+	for _, route := range d.routes {
+		if strings.HasSuffix(qName, route.domain) {
+			return route.dnsttUDP
 		}
 	}
-	return false
+	return nil
 }
 
 func forwardDNS(w dns.ResponseWriter, r *dns.Msg, target *net.UDPAddr) {

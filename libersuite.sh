@@ -6,6 +6,7 @@ DNSTT_DIR="$BASE_DIR/dnstt"
 LIBER_DIR="$BASE_DIR/libersuite"
 CONF_FILE="$BASE_DIR/config.env"
 BIN_TARGET="/usr/local/bin/libersuite"
+DNSTT_RUNNER="$DNSTT_DIR/dnstt-runner.sh"
 
 DNSTT_SERVICE="/etc/systemd/system/dnstt.service"
 LIBER_SERVICE="/etc/systemd/system/libersuite.service"
@@ -40,25 +41,92 @@ save_conf() {
   cat > "$CONF_FILE" <<EOF
 DOMAIN="$DOMAIN"
 DNSTT_PORT="$DNSTT_PORT"
+DNSTT_ADDRS="$DNSTT_ADDRS"
 LIBERSUITE_PORT="$LIBERSUITE_PORT"
 SSH_PORT="$SSH_PORT"
 SOCKS_PORT="$SOCKS_PORT"
 EOF
 }
 
+parse_domains() {
+  DOMAINS=()
+  while IFS=',' read -ra RAW_DOMAINS; do
+    for raw_domain in "${RAW_DOMAINS[@]}"; do
+      trimmed="$(echo "$raw_domain" | xargs)"
+      if [[ -n "$trimmed" ]]; then
+        DOMAINS+=("$trimmed")
+      fi
+    done
+  done <<< "$DOMAIN"
+}
+
+build_dnstt_addrs() {
+  DNSTT_ADDRS=""
+  for ((i = 0; i < ${#DOMAINS[@]}; i++)); do
+    dnstt_instance_port=$((DNSTT_PORT + i))
+    if [[ -z "$DNSTT_ADDRS" ]]; then
+      DNSTT_ADDRS="127.0.0.1:$dnstt_instance_port"
+    else
+      DNSTT_ADDRS="$DNSTT_ADDRS,127.0.0.1:$dnstt_instance_port"
+    fi
+  done
+}
+
+write_dnstt_runner() {
+  cat > "$DNSTT_RUNNER" <<EOF
+#!/usr/bin/env bash
+set -e
+
+trap 'kill 0' INT TERM EXIT
+EOF
+
+  for ((i = 0; i < ${#DOMAINS[@]}; i++)); do
+    dnstt_instance_port=$((DNSTT_PORT + i))
+    domain_name="${DOMAINS[$i]}"
+    echo "$DNSTT_BIN -udp 127.0.0.1:$dnstt_instance_port -privkey-file $DNSTT_DIR/server.key $domain_name 127.0.0.1:$LIBERSUITE_PORT &" >> "$DNSTT_RUNNER"
+  done
+
+  cat >> "$DNSTT_RUNNER" <<EOF
+wait -n
+EOF
+
+  chmod +x "$DNSTT_RUNNER"
+}
+
 rewrite_services() {
   need_root
   load_conf
+  parse_domains
+
+  if [[ ${#DOMAINS[@]} -eq 0 ]]; then
+    err "At least one domain is required"
+  fi
+
+  DOMAIN="$(IFS=,; echo "${DOMAINS[*]}")"
 
   info "Rewriting systemd services..."
 
+  if [[ "$LIBERSUITE_PORT" == "$SSH_PORT" || "$LIBERSUITE_PORT" == "$SOCKS_PORT" || "$SSH_PORT" == "$SOCKS_PORT" ]]; then
+    err "Ports must be unique: libersuite, ssh, and socks cannot be the same"
+  fi
+
+  for ((i = 0; i < ${#DOMAINS[@]}; i++)); do
+    dnstt_instance_port=$((DNSTT_PORT + i))
+    if [[ "$dnstt_instance_port" == "$LIBERSUITE_PORT" || "$dnstt_instance_port" == "$SSH_PORT" || "$dnstt_instance_port" == "$SOCKS_PORT" ]]; then
+      err "DNSTT port $dnstt_instance_port conflicts with libersuite/ssh/socks"
+    fi
+  done
+
+  build_dnstt_addrs
+  write_dnstt_runner
+
   tee "$DNSTT_SERVICE" > /dev/null <<EOF
 [Unit]
-Description=DNSTT Service
+Description=DNSTT Service (multi-domain)
 After=network.target
 
 [Service]
-ExecStart=$DNSTT_BIN -udp 127.0.0.1:$DNSTT_PORT -privkey-file $DNSTT_DIR/server.key $DOMAIN 127.0.0.1:$LIBERSUITE_PORT
+ExecStart=$DNSTT_RUNNER
 Restart=always
 User=$(whoami)
 WorkingDirectory=$DNSTT_DIR
@@ -73,7 +141,7 @@ Description=Libersuite Panel
 After=network.target
 
 [Service]
-ExecStart=$LIBER_BIN server --port $LIBERSUITE_PORT --ssh-port $SSH_PORT --socks-port $SOCKS_PORT --dns-domain $DOMAIN --dnstt-addr 127.0.0.1:$DNSTT_PORT
+ExecStart=$LIBER_BIN server --port $LIBERSUITE_PORT --ssh-port $SSH_PORT --socks-port $SOCKS_PORT --dns-domain $DOMAIN --dnstt-addr $DNSTT_ADDRS
 Restart=always
 User=$(whoami)
 WorkingDirectory=$LIBER_DIR
@@ -113,6 +181,8 @@ set_domain() {
   load_conf
   DOMAIN="$1"
   [[ -z "$DOMAIN" ]] && err "Usage: libersuite domain <t.example.com[,t.example2.com,...]>"
+  parse_domains
+  DOMAIN="$(IFS=,; echo "${DOMAINS[*]}")"
   save_conf
   rewrite_services
   systemctl restart dnstt libersuite

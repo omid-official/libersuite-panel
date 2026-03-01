@@ -64,6 +64,10 @@ var serverCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		dnsttAddrs := parseDomains(dnsttAddr)
+		if len(dnsttAddrs) == 0 {
+			return fmt.Errorf("at least one dnstt-addr is required")
+		}
 
 		if port == sshPort || port == socksPort || sshPort == socksPort {
 			return fmt.Errorf("port, ssh-port, and socks-port must be different values")
@@ -104,12 +108,15 @@ var serverCmd = &cobra.Command{
 			SSHPort:     sshPort,
 			SOCKSPort:   socksPort,
 		})
-		dnsDispatcher := dnsdispatcher.NewDnsDispatcher(dnsDomains, dnsttAddr)
+		dnsDispatcher, err := dnsdispatcher.NewDnsDispatcher(dnsDomains, dnsttAddrs)
+		if err != nil {
+			return fmt.Errorf("failed to initialize DNS dispatcher: %w", err)
+		}
 
 		log.Printf("Starting mixed SSH/SOCKS entrypoint on %s:%d", host, port)
 		log.Printf("Starting internal SSH server on %s:%d", host, sshPort)
 		log.Printf("Starting internal SOCKS5 server on %s:%d", host, socksPort)
-		log.Printf("Starting DNS dispatcher for domains: %s, forwarding to: %s", strings.Join(dnsDomains, ", "), dnsttAddr)
+		log.Printf("Starting DNS dispatcher for domains: %s, forwarding to: %s", strings.Join(dnsDomains, ", "), strings.Join(dnsttAddrs, ", "))
 		log.Printf("Database: %s", dbPath)
 		log.Printf("Host key: %s", hostKey)
 		log.Println("Press Ctrl+C to stop the server")
@@ -182,7 +189,7 @@ func init() {
 	serverCmd.Flags().Bool("regenerate-key", false, "Regenerate the host key even if it already exists")
 	serverCmd.Flags().Int("key-size", 2048, "RSA key size in bits")
 	serverCmd.Flags().String("dns-domain", "", "Domain(s) to handle DNS queries for, comma-separated (e.g., t.example.com, t2.example.com)")
-	serverCmd.Flags().String("dnstt-addr", "127.0.0.1:5300", "Address to forward DNS queries to (dnstt server)")
+	serverCmd.Flags().String("dnstt-addr", "127.0.0.1:5300", "DNSTT backend address(es), comma-separated (e.g., 127.0.0.1:5300,127.0.0.1:5301)")
 }
 
 func parseDomains(value string) []string {
