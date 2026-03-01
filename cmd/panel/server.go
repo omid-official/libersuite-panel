@@ -7,11 +7,14 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/libersuite-org/panel/crypto"
 	"github.com/libersuite-org/panel/dnsdispatcher"
+	"github.com/libersuite-org/panel/mixedserver"
+	"github.com/libersuite-org/panel/socksserver"
 	"github.com/libersuite-org/panel/sshserver"
 	"github.com/spf13/cobra"
 )
@@ -26,6 +29,14 @@ var serverCmd = &cobra.Command{
 			return err
 		}
 		port, err := cmd.Flags().GetInt("port")
+		if err != nil {
+			return err
+		}
+		sshPort, err := cmd.Flags().GetInt("ssh-port")
+		if err != nil {
+			return err
+		}
+		socksPort, err := cmd.Flags().GetInt("socks-port")
 		if err != nil {
 			return err
 		}
@@ -45,9 +56,17 @@ var serverCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		dnsDomains := parseDomains(dnsDomain)
+		if len(dnsDomains) == 0 {
+			return fmt.Errorf("at least one dns-domain is required")
+		}
 		dnsttAddr, err := cmd.Flags().GetString("dnstt-addr")
 		if err != nil {
 			return err
+		}
+
+		if port == sshPort || port == socksPort || sshPort == socksPort {
+			return fmt.Errorf("port, ssh-port, and socks-port must be different values")
 		}
 
 		if hostKey == "" {
@@ -72,15 +91,25 @@ var serverCmd = &cobra.Command{
 
 		cfg := sshserver.Config{
 			Host:    host,
-			Port:    port,
+			Port:    sshPort,
 			HostKey: hostKey,
 		}
 
 		sshServer := sshserver.New(&cfg)
-		dnsDispatcher := dnsdispatcher.NewDnsDispatcher(dnsDomain, dnsttAddr)
+		socksServer := socksserver.New(&socksserver.Config{Host: host, Port: socksPort})
+		mixedServer := mixedserver.New(&mixedserver.Config{
+			Host:        host,
+			Port:        port,
+			BackendHost: "127.0.0.1",
+			SSHPort:     sshPort,
+			SOCKSPort:   socksPort,
+		})
+		dnsDispatcher := dnsdispatcher.NewDnsDispatcher(dnsDomains, dnsttAddr)
 
-		log.Printf("Starting SSH VPN server on %s:%d", host, port)
-		log.Printf("Starting DNS dispatcher for domain: %s, forwarding to: %s", dnsDomain, dnsttAddr)
+		log.Printf("Starting mixed SSH/SOCKS entrypoint on %s:%d", host, port)
+		log.Printf("Starting internal SSH server on %s:%d", host, sshPort)
+		log.Printf("Starting internal SOCKS5 server on %s:%d", host, socksPort)
+		log.Printf("Starting DNS dispatcher for domains: %s, forwarding to: %s", strings.Join(dnsDomains, ", "), dnsttAddr)
 		log.Printf("Database: %s", dbPath)
 		log.Printf("Host key: %s", hostKey)
 		log.Println("Press Ctrl+C to stop the server")
@@ -88,10 +117,22 @@ var serverCmd = &cobra.Command{
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		errChan := make(chan error, 2)
+		errChan := make(chan error, 4)
 		go func() {
 			if err := sshServer.Start(ctx); err != nil {
 				errChan <- fmt.Errorf("SSH server error: %w", err)
+			}
+		}()
+
+		go func() {
+			if err := socksServer.Start(ctx); err != nil {
+				errChan <- fmt.Errorf("SOCKS server error: %w", err)
+			}
+		}()
+
+		go func() {
+			if err := mixedServer.Start(ctx); err != nil {
+				errChan <- fmt.Errorf("mixed server error: %w", err)
 			}
 		}()
 
@@ -120,6 +161,12 @@ var serverCmd = &cobra.Command{
 		if err := sshServer.Shutdown(shutdownCtx); err != nil {
 			log.Printf("Shutdown error: %v", err)
 		}
+		if err := socksServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("SOCKS shutdown error: %v", err)
+		}
+		if err := mixedServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Mixed server shutdown error: %v", err)
+		}
 
 		log.Println("Server stopped cleanly")
 		return nil
@@ -128,10 +175,27 @@ var serverCmd = &cobra.Command{
 
 func init() {
 	serverCmd.Flags().String("host", "0.0.0.0", "Host address to bind to")
-	serverCmd.Flags().Int("port", 2222, "Port to listen on")
+	serverCmd.Flags().Int("port", 2222, "Mixed SSH/SOCKS entrypoint port")
+	serverCmd.Flags().Int("ssh-port", 2223, "Internal SSH port")
+	serverCmd.Flags().Int("socks-port", 1080, "SOCKS5 port to listen on")
 	serverCmd.Flags().String("host-key", "", "Path to SSH host key file (will be generated if not exists)")
 	serverCmd.Flags().Bool("regenerate-key", false, "Regenerate the host key even if it already exists")
 	serverCmd.Flags().Int("key-size", 2048, "RSA key size in bits")
-	serverCmd.Flags().String("dns-domain", "", "Domain to handle DNS queries for (e.g., t.example.com.)")
+	serverCmd.Flags().String("dns-domain", "", "Domain(s) to handle DNS queries for, comma-separated (e.g., t.example.com, t2.example.com)")
 	serverCmd.Flags().String("dnstt-addr", "127.0.0.1:5300", "Address to forward DNS queries to (dnstt server)")
+}
+
+func parseDomains(value string) []string {
+	parts := strings.Split(value, ",")
+	domains := make([]string, 0, len(parts))
+
+	for _, part := range parts {
+		domain := strings.TrimSpace(part)
+		if domain == "" {
+			continue
+		}
+		domains = append(domains, domain)
+	}
+
+	return domains
 }
