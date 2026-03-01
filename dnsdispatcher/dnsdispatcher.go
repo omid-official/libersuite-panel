@@ -15,13 +15,25 @@ const (
 )
 
 type DnsDispatcher struct {
-	domain    string
+	domains   []string
 	dnsttAddr string
 }
 
-func NewDnsDispatcher(domain, dnsttAddr string) *DnsDispatcher {
+func NewDnsDispatcher(domains []string, dnsttAddr string) *DnsDispatcher {
+	normalizedDomains := make([]string, 0, len(domains))
+	for _, domain := range domains {
+		domain = strings.TrimSpace(strings.ToLower(domain))
+		if domain == "" {
+			continue
+		}
+		if !strings.HasSuffix(domain, ".") {
+			domain += "."
+		}
+		normalizedDomains = append(normalizedDomains, domain)
+	}
+
 	return &DnsDispatcher{
-		domain:    domain + ".",
+		domains:   normalizedDomains,
 		dnsttAddr: dnsttAddr,
 	}
 }
@@ -41,7 +53,7 @@ func (d *DnsDispatcher) Start(ctx context.Context) error {
 
 		qName := strings.ToLower(r.Question[0].Name)
 
-		if strings.HasSuffix(qName, d.domain) {
+		if d.shouldForward(qName) {
 			forwardDNS(w, r, dnsttUDP)
 		}
 	})
@@ -57,6 +69,15 @@ func (d *DnsDispatcher) Start(ctx context.Context) error {
 	case err := <-errChan:
 		return err
 	}
+}
+
+func (d *DnsDispatcher) shouldForward(qName string) bool {
+	for _, domain := range d.domains {
+		if strings.HasSuffix(qName, domain) {
+			return true
+		}
+	}
+	return false
 }
 
 func forwardDNS(w dns.ResponseWriter, r *dns.Msg, target *net.UDPAddr) {
