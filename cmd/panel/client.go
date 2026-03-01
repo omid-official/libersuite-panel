@@ -106,7 +106,7 @@ var clientRemoveCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		username := args[0]
 
-		result := database.DB.Where("username = ?", username).Delete(&models.Client{})
+		result := database.DB.Unscoped().Where("username = ?", username).Delete(&models.Client{})
 		if result.Error != nil {
 			return fmt.Errorf("failed to remove client: %w", result.Error)
 		}
