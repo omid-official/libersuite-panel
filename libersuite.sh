@@ -269,6 +269,7 @@ disable_client() {
 
 export_profile() {
   load_conf
+  parse_domains
   USERNAME="$1"
   IP="$2"
 
@@ -280,13 +281,18 @@ export_profile() {
 
   PUBKEY="$(cat "$DNSTT_DIR/server.pub")"
 
+  if [[ ${#DOMAINS[@]} -eq 0 ]]; then
+      err "No domains available in DOMAINS array"
+  fi
+  PRIMARY_DOMAIN="${DOMAINS[0]}"
+
   ARGS=(
     "client" "export" "$USERNAME"
     "--host" "$IP"
     "--port" "$LIBERSUITE_PORT"
     "--token" "$STATIC_TOKEN"
     "--label" "$USERNAME"
-    "--domain" "$DOMAIN"
+    "--domain" "$PRIMARY_DOMAIN"
     "--pubkey" "$PUBKEY"
   )
 
