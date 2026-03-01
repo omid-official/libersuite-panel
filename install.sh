@@ -12,19 +12,28 @@ LIBERSUITE_SH_URL="https://raw.githubusercontent.com/omid-official/libersuite-pa
 BASE_DIR="$HOME/libersuite"
 DNSTT_DIR="$BASE_DIR/dnstt"
 LIBER_DIR="$BASE_DIR/libersuite"
-BASHRC="$HOME/.bashrc"
 CONF_FILE="$BASE_DIR/config.env"
 RUN_USER="$(whoami)"
+BIN_TARGET="/usr/local/bin/libersuite"
 
-read -rp "Enter your domain (example: t.example.com): " DOMAIN
+read -rp "Enter domain(s), comma-separated (example: t.example.com,t.example2.com): " DOMAIN
 read -rp "Enter DNSTT listen port (default: 5300): " DNSTT_PORT
-read -rp "Enter Libersuite listen port (default: 2222): " LIBERSUITE_PORT
+read -rp "Enter Libersuite listen port (default: 2223): " LIBERSUITE_PORT
+read -rp "Enter internal SSH listen port (default: 2222): " SSH_PORT
+read -rp "Enter SOCKS5 listen port (default: 1080): " SOCKS_PORT
 
 DNSTT_PORT="${DNSTT_PORT:-5300}"
-LIBERSUITE_PORT="${LIBERSUITE_PORT:-2222}"
+LIBERSUITE_PORT="${LIBERSUITE_PORT:-2223}"
+SSH_PORT="${SSH_PORT:-2222}"
+SOCKS_PORT="${SOCKS_PORT:-1080}"
 
 if [[ -z "$DOMAIN" ]]; then
-  echo "Domain cannot be empty"
+  echo "At least one domain is required"
+  exit 1
+fi
+
+if [[ "$LIBERSUITE_PORT" == "$SSH_PORT" || "$LIBERSUITE_PORT" == "$SOCKS_PORT" || "$SSH_PORT" == "$SOCKS_PORT" ]]; then
+  echo "Ports must be unique: libersuite, ssh, and socks cannot be the same"
   exit 1
 fi
 
@@ -74,7 +83,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=$LIBER_DIR/panel server --port $LIBERSUITE_PORT --dns-domain $DOMAIN --dnstt-addr 127.0.0.1:$DNSTT_PORT
+ExecStart=$LIBER_DIR/panel server --port $LIBERSUITE_PORT --ssh-port $SSH_PORT --socks-port $SOCKS_PORT --dns-domain $DOMAIN --dnstt-addr 127.0.0.1:$DNSTT_PORT
 Restart=always
 RestartSec=3
 User=$RUN_USER
@@ -93,25 +102,17 @@ curl -L "$LIBERSUITE_SH_URL" -o "$LIBER_DIR/libersuite"
 
 chmod +x "$LIBER_DIR/libersuite"
 
-if ! grep -q 'export PATH="$HOME/libersuite/libersuite:$PATH"' "$BASHRC"; then
-  echo "[+] Adding libersuite to PATH in ~/.bashrc"
-  {
-    echo ""
-    echo "# Added by libersuite installer"
-    echo 'export PATH="$HOME/libersuite/libersuite:$PATH"'
-  } >> "$BASHRC"
-fi
-
-# Apply PATH change immediately for current session
-export PATH="$HOME/libersuite/libersuite:$PATH"
-
-echo "libersuite.sh installed"
+echo "[+] Installing libersuite command to $BIN_TARGET..."
+sudo install -m 755 "$LIBER_DIR/libersuite" "$BIN_TARGET"
+echo "libersuite command installed"
 
 echo "[+] Saving config..."
 cat > "$CONF_FILE" <<EOF
 DOMAIN="$DOMAIN"
 DNSTT_PORT="$DNSTT_PORT"
 LIBERSUITE_PORT="$LIBERSUITE_PORT"
+SSH_PORT="$SSH_PORT"
+SOCKS_PORT="$SOCKS_PORT"
 EOF
 
 

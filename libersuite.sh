@@ -4,8 +4,8 @@ set -e
 BASE_DIR="$HOME/libersuite"
 DNSTT_DIR="$BASE_DIR/dnstt"
 LIBER_DIR="$BASE_DIR/libersuite"
-BASHRC="$HOME/.bashrc"
 CONF_FILE="$BASE_DIR/config.env"
+BIN_TARGET="/usr/local/bin/libersuite"
 
 DNSTT_SERVICE="/etc/systemd/system/dnstt.service"
 LIBER_SERVICE="/etc/systemd/system/libersuite.service"
@@ -41,6 +41,8 @@ save_conf() {
 DOMAIN="$DOMAIN"
 DNSTT_PORT="$DNSTT_PORT"
 LIBERSUITE_PORT="$LIBERSUITE_PORT"
+SSH_PORT="$SSH_PORT"
+SOCKS_PORT="$SOCKS_PORT"
 EOF
 }
 
@@ -71,7 +73,7 @@ Description=Libersuite Panel
 After=network.target
 
 [Service]
-ExecStart=$LIBER_BIN server --port $LIBERSUITE_PORT --dns-domain $DOMAIN --dnstt-addr 127.0.0.1:$DNSTT_PORT
+ExecStart=$LIBER_BIN server --port $LIBERSUITE_PORT --ssh-port $SSH_PORT --socks-port $SOCKS_PORT --dns-domain $DOMAIN --dnstt-addr 127.0.0.1:$DNSTT_PORT
 Restart=always
 User=$(whoami)
 WorkingDirectory=$LIBER_DIR
@@ -101,6 +103,7 @@ uninstall() {
   systemctl stop dnstt libersuite 2>/dev/null || true
   systemctl disable dnstt libersuite 2>/dev/null || true
   rm -f "$DNSTT_SERVICE" "$LIBER_SERVICE"
+  rm -f "$BIN_TARGET"
   systemctl daemon-reload
   rm -r "$BASE_DIR"
   ok "Uninstalled successfully"
@@ -109,7 +112,7 @@ uninstall() {
 set_domain() {
   load_conf
   DOMAIN="$1"
-  [[ -z "$DOMAIN" ]] && err "Usage: libersuite domain <t.example.com>"
+  [[ -z "$DOMAIN" ]] && err "Usage: libersuite domain <t.example.com[,t.example2.com,...]>"
   save_conf
   rewrite_services
   systemctl restart dnstt libersuite
@@ -120,7 +123,12 @@ set_ports() {
   load_conf
   DNSTT_PORT="$1"
   LIBERSUITE_PORT="$2"
-  [[ -z "$DNSTT_PORT" || -z "$LIBERSUITE_PORT" ]] && err "Usage: libersuite ports <dnstt_port> <libersuite_port>"
+  SSH_PORT="${3:-$SSH_PORT}"
+  SOCKS_PORT="${4:-$SOCKS_PORT}"
+  [[ -z "$DNSTT_PORT" || -z "$LIBERSUITE_PORT" ]] && err "Usage: libersuite ports <dnstt_port> <libersuite_port> [ssh_port] [socks_port]"
+  if [[ "$LIBERSUITE_PORT" == "$SSH_PORT" || "$LIBERSUITE_PORT" == "$SOCKS_PORT" || "$SSH_PORT" == "$SOCKS_PORT" ]]; then
+    err "Ports must be unique: libersuite, ssh, and socks cannot be the same"
+  fi
   save_conf
   rewrite_services
   systemctl restart dnstt libersuite
@@ -257,14 +265,14 @@ help() {
 LiberSuite Manager
 
 Commands:
-  install                       Run installer
-  update                        Update binaries
-  uninstall                     Uninstall libersuite
-  domain <name>                 Change domain
-  ports <dnstt> <liber>         Change ports
-  start | stop | restart        Control services
-  enable | disable              Enable/disable auto-start
-  logs                          Follow logs
+  install                              Run installer
+  update                               Update binaries
+  uninstall                            Uninstall libersuite
+  domain <name[,name2,...]>            Change domain(s)
+  ports <dnstt> <liber> [ssh] [socks]  Change ports
+  start | stop | restart               Control services
+  enable | disable                     Enable/disable auto-start
+  logs                                 Follow logs
 
 Client Management:
   client add <user> <pass> [traffic_gb] [expires_days]
@@ -284,7 +292,7 @@ case "$1" in
   update) update ;;
   uninstall) uninstall ;;
   domain) set_domain "$2" ;;
-  ports) set_ports "$2" "$3" ;;
+  ports) set_ports "$2" "$3" "$4" "$5" ;;
   start) start ;;
   stop) stop ;;
   restart) restart ;;
