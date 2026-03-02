@@ -113,7 +113,7 @@ libersuite client enable <username>
 libersuite client disable <username>
 
 # Export client config URLs (SSH & dnstt)
-libersuite client export <username> <server_ip>
+libersuite client export <username> [server_ip]
 ```
 
 #### Command Descriptions
@@ -131,6 +131,7 @@ libersuite client add someone password123 10 30
 ```
 Example to export a client config:
 ```bash
+libersuite client export someone
 libersuite client export someone server_ip
 ```
 

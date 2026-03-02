@@ -23,6 +23,30 @@ ok()    { echo -e "\033[0;32m[OK]\033[0m $1"; }
 warn()  { echo -e "\033[1;33m[WARN]\033[0m $1"; }
 err()   { echo -e "\033[0;31m[ERR]\033[0m $1"; exit 1; }
 
+detect_public_ip() {
+  local detected_ip=""
+  local source_url
+  local response=""
+
+  for source_url in "https://api.ipify.org" "https://ifconfig.me/ip" "https://icanhazip.com"; do
+    if command -v curl >/dev/null 2>&1; then
+      response="$(curl -4fsSL --max-time 5 "$source_url" 2>/dev/null || true)"
+    elif command -v wget >/dev/null 2>&1; then
+      response="$(wget -4qO- --timeout=5 "$source_url" 2>/dev/null || true)"
+    else
+      break
+    fi
+
+    response="$(echo "$response" | tr -d '[:space:]')"
+    if [[ -n "$response" ]]; then
+      detected_ip="$response"
+      break
+    fi
+  done
+
+  echo "$detected_ip"
+}
+
 need_root() {
   if [[ $EUID -ne 0 ]]; then
     err "This command requires sudo"
@@ -273,7 +297,14 @@ export_profile() {
   USERNAME="$1"
   IP="$2"
 
-  [[ -z "$USERNAME" || -z "$IP" ]] && err "Usage: libersuite client export <username> <server_ip>"
+  [[ -z "$USERNAME" ]] && err "Usage: libersuite client export <username> [server_ip]"
+
+  if [[ -z "$IP" ]]; then
+    info "No server IP provided. Detecting public IP..."
+    IP="$(detect_public_ip)"
+    [[ -z "$IP" ]] && err "Could not auto-detect public IP. Usage: libersuite client export <username> <server_ip>"
+    ok "Detected server IP: $IP"
+  fi
 
   if [[ ! -f "$DNSTT_DIR/server.pub" ]]; then
       err "Public key not found: $DNSTT_DIR/server.pub"
@@ -319,7 +350,7 @@ Client Management:
   libersuite client remove <username>
   libersuite client enable <username>
   libersuite client disable <username>
-  libersuite client export <username> <server_ip>
+  libersuite client export <username> [server_ip]
 
 Examples:
   libersuite client add omid 1234
@@ -328,7 +359,8 @@ Examples:
   libersuite client remove omid
   libersuite client enable mahan
   libersuite client disable omid
-  libersuite client export mahan 1.2.3.4 t.example.com pubkey
+  libersuite client export mahan
+  libersuite client export mahan 1.2.3.4
 
 EOF
       ;;
@@ -356,7 +388,7 @@ Client Management:
   client remove <username>      Remove a client
   client enable <username>      Enable a client
   client disable <username>     Disable a client
-  client export <user> <ip>
+  client export <user> [ip]
 
 For client command help: libersuite client
 
