@@ -56,18 +56,39 @@ var serverCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		dnsDomains := parseDomains(dnsDomain)
-		if len(dnsDomains) == 0 {
-			return fmt.Errorf("at least one dns-domain is required")
-		}
 		dnsttAddr, err := cmd.Flags().GetString("dnstt-addr")
 		if err != nil {
 			return err
 		}
-		dnsttAddrs := parseDomains(dnsttAddr)
-		if len(dnsttAddrs) == 0 {
-			return fmt.Errorf("at least one dnstt-addr is required")
+		slipstreamDomain, err := cmd.Flags().GetString("slipstream-domain")
+		if err != nil {
+			return err
 		}
+		slipstreamAddr, err := cmd.Flags().GetString("slipstream-addr")
+		if err != nil {
+			return err
+		}
+
+		dnsDomains := parseDomains(dnsDomain)
+		dnsttAddrs := parseDomains(dnsttAddr)
+		slipstreamDomains := parseDomains(slipstreamDomain)
+		slipstreamAddrs := parseDomains(slipstreamAddr)
+
+		if len(dnsDomains) == 0 && len(slipstreamDomains) == 0 {
+			return fmt.Errorf("at least one dns-domain or slipstream-domain is required")
+		}
+
+		if len(dnsDomains) > 0 && len(dnsttAddrs) == 0 {
+			return fmt.Errorf("dnstt-addr is required when dns-domain is set")
+		}
+
+		if len(slipstreamDomains) > 0 && len(slipstreamAddrs) == 0 {
+			return fmt.Errorf("slipstream-addr is required when slipstream-domain is set")
+		}
+
+		// Merge all domains and backend addresses for the DNS dispatcher
+		allDomains := append(dnsDomains, slipstreamDomains...)
+		allAddrs := append(dnsttAddrs, slipstreamAddrs...)
 
 		if port == sshPort || port == socksPort || sshPort == socksPort {
 			return fmt.Errorf("port, ssh-port, and socks-port must be different values")
@@ -108,7 +129,7 @@ var serverCmd = &cobra.Command{
 			SSHPort:     sshPort,
 			SOCKSPort:   socksPort,
 		})
-		dnsDispatcher, err := dnsdispatcher.NewDnsDispatcher(dnsDomains, dnsttAddrs)
+		dnsDispatcher, err := dnsdispatcher.NewDnsDispatcher(allDomains, allAddrs)
 		if err != nil {
 			return fmt.Errorf("failed to initialize DNS dispatcher: %w", err)
 		}
@@ -116,7 +137,12 @@ var serverCmd = &cobra.Command{
 		log.Printf("Starting mixed SSH/SOCKS entrypoint on %s:%d", host, port)
 		log.Printf("Starting internal SSH server on %s:%d", host, sshPort)
 		log.Printf("Starting internal SOCKS5 server on %s:%d", host, socksPort)
-		log.Printf("Starting DNS dispatcher for domains: %s, forwarding to: %s", strings.Join(dnsDomains, ", "), strings.Join(dnsttAddrs, ", "))
+		if len(dnsDomains) > 0 {
+			log.Printf("Starting DNS dispatcher for DNSTT domains: %s → %s", strings.Join(dnsDomains, ", "), strings.Join(dnsttAddrs, ", "))
+		}
+		if len(slipstreamDomains) > 0 {
+			log.Printf("Starting DNS dispatcher for Slipstream domains: %s → %s", strings.Join(slipstreamDomains, ", "), strings.Join(slipstreamAddrs, ", "))
+		}
 		log.Printf("Database: %s", dbPath)
 		log.Printf("Host key: %s", hostKey)
 		log.Println("Press Ctrl+C to stop the server")
@@ -188,8 +214,10 @@ func init() {
 	serverCmd.Flags().String("host-key", "", "Path to SSH host key file (will be generated if not exists)")
 	serverCmd.Flags().Bool("regenerate-key", false, "Regenerate the host key even if it already exists")
 	serverCmd.Flags().Int("key-size", 2048, "RSA key size in bits")
-	serverCmd.Flags().String("dns-domain", "", "Domain(s) to handle DNS queries for, comma-separated (e.g., t.example.com, t2.example.com)")
-	serverCmd.Flags().String("dnstt-addr", "127.0.0.1:5300", "DNSTT backend address(es), comma-separated (e.g., 127.0.0.1:5300,127.0.0.1:5301)")
+	serverCmd.Flags().String("dns-domain", "", "DNSTT domain(s), comma-separated (e.g., t.example.com,t2.example.com)")
+	serverCmd.Flags().String("dnstt-addr", "", "DNSTT backend address(es), comma-separated (e.g., 127.0.0.1:5300,127.0.0.1:5301)")
+	serverCmd.Flags().String("slipstream-domain", "", "Slipstream domain(s), comma-separated (e.g., s.example.com)")
+	serverCmd.Flags().String("slipstream-addr", "", "Slipstream backend address(es), comma-separated (e.g., 127.0.0.1:5400)")
 }
 
 func parseDomains(value string) []string {

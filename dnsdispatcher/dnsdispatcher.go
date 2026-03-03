@@ -19,11 +19,11 @@ type DnsDispatcher struct {
 }
 
 type domainRoute struct {
-	domain   string
-	dnsttUDP *net.UDPAddr
+	domain     string
+	backendUDP *net.UDPAddr
 }
 
-func NewDnsDispatcher(domains []string, dnsttAddrs []string) (*DnsDispatcher, error) {
+func NewDnsDispatcher(domains []string, backendAddrs []string) (*DnsDispatcher, error) {
 	normalizedDomains := make([]string, 0, len(domains))
 	for _, domain := range domains {
 		domain = strings.TrimSpace(strings.ToLower(domain))
@@ -40,8 +40,8 @@ func NewDnsDispatcher(domains []string, dnsttAddrs []string) (*DnsDispatcher, er
 		return nil, fmt.Errorf("at least one domain is required")
 	}
 
-	normalizedAddrs := make([]string, 0, len(dnsttAddrs))
-	for _, addr := range dnsttAddrs {
+	normalizedAddrs := make([]string, 0, len(backendAddrs))
+	for _, addr := range backendAddrs {
 		addr = strings.TrimSpace(addr)
 		if addr == "" {
 			continue
@@ -50,11 +50,11 @@ func NewDnsDispatcher(domains []string, dnsttAddrs []string) (*DnsDispatcher, er
 	}
 
 	if len(normalizedAddrs) == 0 {
-		return nil, fmt.Errorf("at least one dnstt address is required")
+		return nil, fmt.Errorf("at least one backend address is required")
 	}
 
 	if len(normalizedAddrs) != 1 && len(normalizedAddrs) != len(normalizedDomains) {
-		return nil, &net.AddrError{Err: "dnstt addr count must be 1 or match dns-domain count"}
+		return nil, &net.AddrError{Err: "backend addr count must be 1 or match domain count"}
 	}
 
 	routes := make([]domainRoute, 0, len(normalizedDomains))
@@ -64,12 +64,12 @@ func NewDnsDispatcher(domains []string, dnsttAddrs []string) (*DnsDispatcher, er
 			addr = normalizedAddrs[i]
 		}
 
-		dnsttUDP, err := net.ResolveUDPAddr("udp", addr)
+		backendUDP, err := net.ResolveUDPAddr("udp", addr)
 		if err != nil {
 			return nil, err
 		}
 
-		routes = append(routes, domainRoute{domain: domain, dnsttUDP: dnsttUDP})
+		routes = append(routes, domainRoute{domain: domain, backendUDP: backendUDP})
 	}
 
 	return &DnsDispatcher{routes: routes}, nil
@@ -106,7 +106,7 @@ func (d *DnsDispatcher) Start(ctx context.Context) error {
 func (d *DnsDispatcher) matchTarget(qName string) *net.UDPAddr {
 	for _, route := range d.routes {
 		if strings.HasSuffix(qName, route.domain) {
-			return route.dnsttUDP
+			return route.backendUDP
 		}
 	}
 	return nil

@@ -107,7 +107,7 @@ func (s *Server) handleConnection(clientConn net.Conn) {
 		targetPort = s.cfg.SOCKSPort
 	}
 
-	targetAddr := fmt.Sprintf("%s:%d", s.cfg.BackendHost, targetPort)
+	targetAddr := net.JoinHostPort(s.cfg.BackendHost, fmt.Sprintf("%d", targetPort))
 	targetConn, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
 	if err != nil {
 		log.Printf("Mixed dial backend %s failed: %v", targetAddr, err)
