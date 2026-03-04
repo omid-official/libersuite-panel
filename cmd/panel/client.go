@@ -1,8 +1,11 @@
 package panel
 
 import (
+	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"net/url"
 	"os"
@@ -164,7 +167,7 @@ var clientDisableCmd = &cobra.Command{
 
 var clientExportCmd = &cobra.Command{
 	Use:   "export [username]",
-	Short: "Export client connection URL",
+	Short: "Export client connection info",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		username := args[0]
@@ -180,15 +183,38 @@ var clientExportCmd = &cobra.Command{
 		label, _ := cmd.Flags().GetString("label")
 		domain, _ := cmd.Flags().GetString("domain")
 		pubkey, _ := cmd.Flags().GetString("pubkey")
+		slipstreamDomain, _ := cmd.Flags().GetString("slipstream-domain")
+		slipstreamCert, _ := cmd.Flags().GetString("slipstream-cert")
 
 		if label == "" {
 			label = fmt.Sprintf("SSH %s", username)
 		}
 
 		sshConnectionURL := generateSSHURL(username, client.Password, host, port, token, label)
-		dnsttConnectionURL := generateDNSTTURL(label, domain, pubkey, username, client.Password)
 		fmt.Println(sshConnectionURL)
-		fmt.Println(dnsttConnectionURL)
+
+		if domain != "" && pubkey != "" {
+			dnsttConnectionURL := generateDNSTTURL(label, domain, pubkey, username, client.Password)
+			fmt.Println(dnsttConnectionURL)
+		}
+
+		if slipstreamDomain != "" {
+			fmt.Println()
+			fmt.Println("--- Slipstream Connection Info ---")
+			fmt.Printf("Domain:   %s\n", slipstreamDomain)
+			fmt.Printf("Username: %s\n", username)
+			fmt.Printf("Password: %s\n", client.Password)
+			fmt.Printf("Host:     %s\n", host)
+			fmt.Printf("Port:     %d\n", port)
+			if slipstreamCert != "" {
+				certFingerprint := readCertFingerprint(slipstreamCert)
+				if certFingerprint != "" {
+					fmt.Printf("Cert SHA256: %s\n", certFingerprint)
+				}
+			}
+			fmt.Println("---------------------------------")
+		}
+
 		return nil
 	},
 }
@@ -202,8 +228,10 @@ func init() {
 	clientExportCmd.Flags().Int("port", 2222, "SSH server port")
 	clientExportCmd.Flags().String("token", "", "Connection token/key")
 	clientExportCmd.Flags().String("label", "", "Connection label")
-	clientExportCmd.Flags().String("domain", "", "Dnstt domain")
-	clientExportCmd.Flags().String("pubkey", "", "Public key")
+	clientExportCmd.Flags().String("domain", "", "DNSTT domain")
+	clientExportCmd.Flags().String("pubkey", "", "DNSTT public key")
+	clientExportCmd.Flags().String("slipstream-domain", "", "Slipstream tunnel domain")
+	clientExportCmd.Flags().String("slipstream-cert", "", "Path to Slipstream TLS cert for fingerprint")
 
 	// Add subcommands
 	clientCmd.AddCommand(clientAddCmd)
@@ -269,4 +297,24 @@ func generateDNSTTURL(label, domain, pubkey, username, password string) string {
 	}
 
 	return "dns://" + base64.StdEncoding.EncodeToString(data)
+}
+
+func readCertFingerprint(certPath string) string {
+	data, err := os.ReadFile(certPath)
+	if err != nil {
+		return ""
+	}
+
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return ""
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return ""
+	}
+
+	hash := sha256.Sum256(cert.Raw)
+	return fmt.Sprintf("%x", hash)
 }
