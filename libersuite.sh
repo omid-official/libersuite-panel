@@ -7,13 +7,7 @@ SLIPSTREAM_DIR="$BASE_DIR/slipstream"
 LIBER_DIR="$BASE_DIR/libersuite"
 CONF_FILE="$BASE_DIR/config.env"
 BIN_TARGET="/usr/local/bin/libersuite"
-DNSTT_RUNNER="$DNSTT_DIR/dnstt-runner.sh"
-SLIPSTREAM_RUNNER="$SLIPSTREAM_DIR/slipstream-runner.sh"
 
-DNSTT_SERVICE="/etc/systemd/system/dnstt.service"
-SLIPSTREAM_SERVICE="/etc/systemd/system/slipstream.service"
-SLIPSTREAM_WATCHDOG_SERVICE="/etc/systemd/system/slipstream-watchdog.service"
-SLIPSTREAM_WATCHDOG_TIMER="/etc/systemd/system/slipstream-watchdog.timer"
 LIBER_SERVICE="/etc/systemd/system/libersuite.service"
 
 DNSTT_BIN="$DNSTT_DIR/dnstt-server-linux-amd64"
@@ -82,10 +76,8 @@ save_conf() {
 TUNNEL_MODE="$TUNNEL_MODE"
 DOMAIN="$DOMAIN"
 DNSTT_PORT="$DNSTT_PORT"
-DNSTT_ADDRS="$DNSTT_ADDRS"
 SLIPSTREAM_DOMAIN="$SLIPSTREAM_DOMAIN"
 SLIPSTREAM_PORT="$SLIPSTREAM_PORT"
-SLIPSTREAM_ADDRS="$SLIPSTREAM_ADDRS"
 LIBERSUITE_PORT="$LIBERSUITE_PORT"
 SSH_PORT="$SSH_PORT"
 SOCKS_PORT="$SOCKS_PORT"
@@ -104,18 +96,6 @@ parse_domains() {
   done <<< "$DOMAIN"
 }
 
-build_dnstt_addrs() {
-  DNSTT_ADDRS=""
-  for ((i = 0; i < ${#DOMAINS[@]}; i++)); do
-    dnstt_instance_port=$((DNSTT_PORT + i))
-    if [[ -z "$DNSTT_ADDRS" ]]; then
-      DNSTT_ADDRS="127.0.0.1:$dnstt_instance_port"
-    else
-      DNSTT_ADDRS="$DNSTT_ADDRS,127.0.0.1:$dnstt_instance_port"
-    fi
-  done
-}
-
 parse_slipstream_domains() {
   SLIPSTREAM_DOMAINS=()
   while IFS=',' read -ra RAW_DOMAINS; do
@@ -126,102 +106,6 @@ parse_slipstream_domains() {
       fi
     done
   done <<< "$SLIPSTREAM_DOMAIN"
-}
-
-build_slipstream_addrs() {
-  SLIPSTREAM_ADDRS=""
-  for ((i = 0; i < ${#SLIPSTREAM_DOMAINS[@]}; i++)); do
-    slip_instance_port=$((SLIPSTREAM_PORT + i))
-    if [[ -z "$SLIPSTREAM_ADDRS" ]]; then
-      SLIPSTREAM_ADDRS="127.0.0.1:$slip_instance_port"
-    else
-      SLIPSTREAM_ADDRS="$SLIPSTREAM_ADDRS,127.0.0.1:$slip_instance_port"
-    fi
-  done
-}
-
-write_dnstt_runner() {
-  cat > "$DNSTT_RUNNER" <<EOF
-#!/usr/bin/env bash
-set -e
-
-trap 'kill 0' INT TERM EXIT
-EOF
-
-  for ((i = 0; i < ${#DOMAINS[@]}; i++)); do
-    dnstt_instance_port=$((DNSTT_PORT + i))
-    domain_name="${DOMAINS[$i]}"
-    echo "$DNSTT_BIN -udp 127.0.0.1:$dnstt_instance_port -privkey-file $DNSTT_DIR/server.key $domain_name 127.0.0.1:$LIBERSUITE_PORT &" >> "$DNSTT_RUNNER"
-  done
-
-  cat >> "$DNSTT_RUNNER" <<EOF
-wait -n
-EOF
-
-  chmod +x "$DNSTT_RUNNER"
-}
-
-write_slipstream_runner() {
-  mkdir -p "$SLIPSTREAM_DIR"
-
-  cat > "$SLIPSTREAM_RUNNER" <<EOF
-#!/usr/bin/env bash
-set -e
-
-trap 'kill 0' INT TERM EXIT
-EOF
-
-  for ((i = 0; i < ${#SLIPSTREAM_DOMAINS[@]}; i++)); do
-    slip_instance_port=$((SLIPSTREAM_PORT + i))
-    slip_domain="${SLIPSTREAM_DOMAINS[$i]}"
-    echo "$SLIPSTREAM_BIN --dns-listen-host 127.0.0.1 --dns-listen-port $slip_instance_port --domain $slip_domain --cert $SLIPSTREAM_DIR/cert.pem --key $SLIPSTREAM_DIR/key.pem --target-address 127.0.0.1:$LIBERSUITE_PORT &" >> "$SLIPSTREAM_RUNNER"
-  done
-
-  cat >> "$SLIPSTREAM_RUNNER" <<EOF
-wait -n
-EOF
-
-  chmod +x "$SLIPSTREAM_RUNNER"
-}
-
-write_slipstream_watchdog() {
-  mkdir -p "$SLIPSTREAM_DIR"
-
-  cat > "$SLIPSTREAM_DIR/watchdog.sh" <<'WATCHDOG_EOF'
-#!/usr/bin/env bash
-# Slipstream watchdog: probes each instance port with a DNS query.
-# If any port is unresponsive, restart the slipstream service.
-
-CONF_FILE="$HOME/libersuite/config.env"
-[[ -f "$CONF_FILE" ]] && source "$CONF_FILE"
-
-SLIPSTREAM_PORT="${SLIPSTREAM_PORT:-5400}"
-SLIPSTREAM_DOMAIN="${SLIPSTREAM_DOMAIN:-}"
-
-if [[ -z "$SLIPSTREAM_DOMAIN" ]]; then
-  exit 0
-fi
-
-IFS=',' read -ra DOMAINS <<< "$SLIPSTREAM_DOMAIN"
-FAIL=0
-
-for ((i = 0; i < ${#DOMAINS[@]}; i++)); do
-  port=$((SLIPSTREAM_PORT + i))
-  domain="${DOMAINS[$i]}"
-
-  # Send a DNS A query. Any response (even SERVFAIL/REFUSED) means alive.
-  if ! dig +short +timeout=5 +tries=1 "@127.0.0.1" -p "$port" "$domain" A >/dev/null 2>&1; then
-    echo "[watchdog] slipstream port $port ($domain) unresponsive"
-    FAIL=1
-  fi
-done
-
-if [[ "$FAIL" -eq 1 ]]; then
-  echo "[watchdog] restarting slipstream service..."
-  systemctl restart slipstream
-fi
-WATCHDOG_EOF
-  chmod +x "$SLIPSTREAM_DIR/watchdog.sh"
 }
 
 rewrite_services() {
@@ -249,95 +133,18 @@ rewrite_services() {
     SLIPSTREAM_DOMAIN="$(IFS=,; echo "${SLIPSTREAM_DOMAINS[*]}")"
   fi
 
-  info "Rewriting systemd services..."
+  info "Rewriting libersuite service..."
 
   if [[ "$LIBERSUITE_PORT" == "$SSH_PORT" || "$LIBERSUITE_PORT" == "$SOCKS_PORT" || "$SSH_PORT" == "$SOCKS_PORT" ]]; then
     err "Ports must be unique: libersuite, ssh, and socks cannot be the same"
   fi
 
-  if use_dnstt; then
-    for ((i = 0; i < ${#DOMAINS[@]}; i++)); do
-      dnstt_instance_port=$((DNSTT_PORT + i))
-      if [[ "$dnstt_instance_port" == "$LIBERSUITE_PORT" || "$dnstt_instance_port" == "$SSH_PORT" || "$dnstt_instance_port" == "$SOCKS_PORT" ]]; then
-        err "DNSTT port $dnstt_instance_port conflicts with libersuite/ssh/socks"
-      fi
-    done
-    build_dnstt_addrs
-    write_dnstt_runner
-
-    tee "$DNSTT_SERVICE" > /dev/null <<EOF
-[Unit]
-Description=DNSTT Service (multi-domain)
-After=network.target
-
-[Service]
-ExecStart=$DNSTT_RUNNER
-Restart=always
-User=$(whoami)
-WorkingDirectory=$DNSTT_DIR
-
-[Install]
-WantedBy=multi-user.target
-EOF
-  fi
-
-  if use_slipstream; then
-    for ((i = 0; i < ${#SLIPSTREAM_DOMAINS[@]}; i++)); do
-      slip_instance_port=$((SLIPSTREAM_PORT + i))
-      if [[ "$slip_instance_port" == "$LIBERSUITE_PORT" || "$slip_instance_port" == "$SSH_PORT" || "$slip_instance_port" == "$SOCKS_PORT" ]]; then
-        err "Slipstream port $slip_instance_port conflicts with libersuite/ssh/socks"
-      fi
-    done
-    build_slipstream_addrs
-    write_slipstream_runner
-
-    tee "$SLIPSTREAM_SERVICE" > /dev/null <<EOF
-[Unit]
-Description=Slipstream Service (multi-domain)
-After=network.target
-
-[Service]
-ExecStart=$SLIPSTREAM_RUNNER
-Restart=always
-User=$(whoami)
-WorkingDirectory=$SLIPSTREAM_DIR
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    write_slipstream_watchdog
-
-    tee "$SLIPSTREAM_WATCHDOG_SERVICE" > /dev/null <<EOF
-[Unit]
-Description=Slipstream Watchdog Health Check
-
-[Service]
-Type=oneshot
-User=root
-ExecStart=$SLIPSTREAM_DIR/watchdog.sh
-EOF
-
-    tee "$SLIPSTREAM_WATCHDOG_TIMER" > /dev/null <<EOF
-[Unit]
-Description=Run Slipstream Watchdog every 2 minutes
-
-[Timer]
-OnBootSec=60
-OnUnitActiveSec=120
-
-[Install]
-WantedBy=timers.target
-EOF
-  fi
-
-  # Build panel server flags
   PANEL_FLAGS="--port $LIBERSUITE_PORT --ssh-port $SSH_PORT --socks-port $SOCKS_PORT"
   if use_dnstt; then
-    PANEL_FLAGS="$PANEL_FLAGS --dns-domain $DOMAIN --dnstt-addr $DNSTT_ADDRS"
+    PANEL_FLAGS="$PANEL_FLAGS --dns-domain $DOMAIN --dnstt-bin $DNSTT_BIN --dnstt-key $DNSTT_DIR/server.key --dnstt-port $DNSTT_PORT"
   fi
   if use_slipstream; then
-    PANEL_FLAGS="$PANEL_FLAGS --slipstream-domain $SLIPSTREAM_DOMAIN --slipstream-addr $SLIPSTREAM_ADDRS"
+    PANEL_FLAGS="$PANEL_FLAGS --slipstream-domain $SLIPSTREAM_DOMAIN --slipstream-bin $SLIPSTREAM_BIN --slipstream-cert $SLIPSTREAM_DIR/cert.pem --slipstream-key $SLIPSTREAM_DIR/key.pem --slipstream-port $SLIPSTREAM_PORT"
   fi
 
   tee "$LIBER_SERVICE" > /dev/null <<EOF
@@ -356,20 +163,12 @@ WantedBy=multi-user.target
 EOF
 
   systemctl daemon-reload
-  if use_slipstream; then
-    systemctl enable slipstream-watchdog.timer 2>/dev/null || true
-    systemctl start slipstream-watchdog.timer 2>/dev/null || true
-  fi
-  ok "Services updated"
+  ok "Service updated"
 }
 
 # ===== Helper: list active tunnel services =====
 tunnel_services() {
-  local svcs="libersuite"
-  load_conf 2>/dev/null || true
-  use_dnstt && svcs="$svcs dnstt"
-  use_slipstream && svcs="$svcs slipstream"
-  echo "$svcs"
+  echo "libersuite"
 }
 
 # ===== Commands =====
@@ -386,9 +185,9 @@ update() {
 
 uninstall() {
   need_root
-  systemctl stop slipstream-watchdog.timer dnstt slipstream libersuite 2>/dev/null || true
-  systemctl disable slipstream-watchdog.timer dnstt slipstream libersuite 2>/dev/null || true
-  rm -f "$DNSTT_SERVICE" "$SLIPSTREAM_SERVICE" "$SLIPSTREAM_WATCHDOG_SERVICE" "$SLIPSTREAM_WATCHDOG_TIMER" "$LIBER_SERVICE"
+  systemctl stop libersuite 2>/dev/null || true
+  systemctl disable libersuite 2>/dev/null || true
+  rm -f "$LIBER_SERVICE"
   rm -f "$BIN_TARGET"
   systemctl daemon-reload
   rm -rf "$BASE_DIR"
@@ -455,11 +254,7 @@ enable()  { need_root; for svc in $(tunnel_services); do systemctl enable "$svc"
 disable() { need_root; for svc in $(tunnel_services); do systemctl disable "$svc"; done; ok "Disabled at boot"; }
 
 logs() {
-  local journal_args="-u libersuite"
-  load_conf 2>/dev/null || true
-  use_dnstt && journal_args="$journal_args -u dnstt"
-  use_slipstream && journal_args="$journal_args -u slipstream"
-  journalctl $journal_args -f
+  journalctl -u libersuite -f
 }
 
 add_client() {
